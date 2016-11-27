@@ -1,0 +1,111 @@
+function sparse_x = l1eq_gp(A,b,MaxIter)
+
+
+
+if (nargin < 3), MaxIter= 30;  end
+[M,N] = size(A);
+DD = null(A,'r');
+D = orth(DD);
+xk = 0.1*rand(N,1);
+xx = A'*((A*A')\b);
+
+rho = 0.8;
+mu = 0.4;
+
+%etha = 0.001;
+%% choose the best x in the iteration
+bestx = xx;
+bestx_l1 = norm(bestx,1);
+for i = 1:1000
+
+    ngrad = unidrnd(2,N,1)-1.5;
+    ngrad(xk < 0) = 1;
+    ngrad(xk > 0) = -1;
+    t = 0.01;
+    xpk = xk+t*ngrad;
+    sumxk = sum(abs(xk));
+    while(sum(abs(xpk)) > sumxk + mu*t*ngrad'*xpk)
+        t = rho*t;
+        xpk = xk+t*ngrad;
+    end
+    tempmatrix = repmat(((xpk-xx)'*D),size(D,1),1);
+    xpk_projection = sum(tempmatrix.*D,2);
+    xk = xpk_projection + xx;
+    %sum(abs(A*xk - b))
+    if (norm(xk,1) < bestx_l1)
+        bestx = xk;
+        bestx_l1 = norm(xk,1);
+    end
+end
+sparse_x = bestx;
+D = null(A);
+best_minl1 = norm(bestx,1);
+fprintf('    l1 is %f \n', best_minl1);
+%%
+
+%%
+temp_bestx = sparse_x;
+for k = 1:MaxIter
+    
+    [~,projection] = sort(abs(sparse_x));
+    
+    U = D/D(projection(1:(N-M)),:);
+    U(abs(U) < 1.0e-11) = 0;
+    tol = 1.0e-20;% avoid 0 in divid
+    templ1 = temp_bestx ;
+    for i = 1:(N-M)
+        
+[minl1,temp_bestx,best_index] = l1_min(sparse_x,U(:,i));
+        if best_minl1 > minl1
+            best_minl1 = minl1;
+            sparse_x = temp_bestx;
+        end
+
+        if i == (N-M)
+            break;
+        end
+
+        maxi(best_index) = M + i + 1;
+        
+        tr_time = U(best_index,i+1:end)/(U(best_index, i)+tol);
+        tr_time(abs(tr_time) > 1.0e15 ) = 0;
+        U(:,i+1:end) = U(:,i+1:end) - U(:,i)*tr_time;
+        
+    end
+    fprintf('    l1 is %f \n', best_minl1);
+    %% no decrease
+    if templ1 >= temp_bestx
+        break;
+    end
+end
+
+l1 = norm(temp_bestx,1);
+yuzhi = l1/M/N/N;
+zeronumber = zeros(N,1);
+zeronumber(abs(temp_bestx) < yuzhi) = 1;
+
+zerosum = sum(zeronumber);
+err = norm(A*(temp_bestx) - b,2);
+
+fprintf(' l1 is %f, zero number is %f, ||Ax - b||_2 is %f \n', l1, zerosum, err);
+end
+
+
+function [y,t,ind] = l1_min(b,x)
+%% ||b - t x||_1 minimize
+a = b./(x + 1.0e-20);
+a(abs(x) < 1.0e-15)= 0;
+[~, index] = sort(a);
+
+xa = abs(x(index));
+sxa = cumsum(xa);
+sumsxa = sxa(end)/2;
+i = 1;
+while sxa(i)  < sumsxa
+  i = i+1;
+end
+ind = index(i);
+t = b - a(ind)*x;
+y = sum(abs(t));
+
+end
